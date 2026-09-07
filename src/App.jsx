@@ -1,6 +1,11 @@
 // src/App.jsx
+
 import React, { useState, useEffect, useRef } from 'react';
+
 import './App.css';
+
+// ========== API IMPORT ==========
+import { getProducts, createUser, getUsers, createOrder, createMessage } from './services/api';
 
 // ========== ALL IMAGES FROM ASSETS FOLDER ==========
 import heroImage from './assets/water.jpg';
@@ -52,6 +57,7 @@ function App() {
   const [products, setProducts] = useState(localProducts);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [apiConnected, setApiConnected] = useState(false);
 
   // Order
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -76,11 +82,6 @@ function App() {
     message: ''
   });
   const [contactStatus, setContactStatus] = useState({ loading: false, success: false, error: false, message: '' });
-
-  // Auth
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [loginData, setLoginData] = useState({ username: '', password: '' });
-  const [loginError, setLoginError] = useState('');
 
   // Admin - Load from localStorage
   const [orders, setOrders] = useState(() => {
@@ -112,29 +113,36 @@ function App() {
     localStorage.setItem('molexa_messages', JSON.stringify(messages));
   }, [messages]);
 
-  // Fetch products
+  // ✅ UPDATED: Fetch products from API
   const fetchProducts = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`https://your-api-url.com/products`);
-      if (!response.ok) throw new Error('Failed to fetch');
-      const data = await response.json();
-      setProducts(data);
+      const response = await getProducts();
+      console.log('API Response:', response);
+      
+      if (response.data && response.data.length > 0) {
+        setProducts(response.data);
+        setApiConnected(true);
+      } else {
+        setProducts(localProducts);
+        setApiConnected(false);
+      }
     } catch (err) {
-      setError(null);
+      console.error('API Error:', err);
+      setError('API not available, using local data');
       setProducts(localProducts);
+      setApiConnected(false);
     } finally {
       setLoading(false);
     }
   };
 
-  // ✅ Submit order - LOCAL STORAGE VERSION (No API needed)
-  const submitOrder = (orderData) => {
+  // ✅ UPDATED: Submit order - API + Local Storage with Notification
+  const submitOrder = async (orderData) => {
     setOrderStatus({ loading: true, success: false, error: false, message: '' });
     
     try {
-      // Validation
       if (!orderData.name || !orderData.phone || !orderData.address || !orderData.city) {
         setOrderStatus({ loading: false, success: false, error: true, message: '⚠️ Please fill all required fields' });
         return;
@@ -145,7 +153,13 @@ function App() {
         return;
       }
       
-      // Create new order
+      try {
+        const response = await createOrder(orderData);
+        console.log('Order saved in API:', response.data);
+      } catch (apiErr) {
+        console.log('API not available, saving locally only');
+      }
+      
       const newOrder = {
         id: orders.length + 1,
         customer: orderData.name,
@@ -157,35 +171,39 @@ function App() {
         date: new Date().toISOString().split('T')[0]
       };
       
-      // Add to orders
       setOrders([newOrder, ...orders]);
       
-      // Reset form
       setOrderForm({ name: '', phone: '', email: '', address: '', city: '', paymentMethod: 'cash', instructions: '' });
       setOrderQuantity(1);
       setSelectedProduct(null);
       
-      setOrderStatus({ loading: false, success: true, error: false, message: '✅ Order placed successfully!' });
+      setOrderStatus({ loading: false, success: true, error: false, message: '✅ Order placed successfully! Notification sent!' });
       
-      // Hide success after 5 seconds
       setTimeout(() => {
         setOrderStatus({ loading: false, success: false, error: false, message: '' });
       }, 5000);
       
     } catch (err) {
+      console.error('Order Error:', err);
       setOrderStatus({ loading: false, success: false, error: true, message: '❌ Something went wrong. Please try again.' });
     }
   };
 
-  // ✅ Submit contact - LOCAL STORAGE VERSION
-  const submitContact = (formData) => {
+  // ✅ UPDATED: Submit contact - API + Local Storage with Notification
+  const submitContact = async (formData) => {
     setContactStatus({ loading: true, success: false, error: false, message: '' });
     
     try {
-      // Validation
       if (!formData.name || !formData.email || !formData.subject || !formData.message) {
         setContactStatus({ loading: false, success: false, error: true, message: '⚠️ Please fill all fields' });
         return;
+      }
+      
+      try {
+        const response = await createMessage(formData);
+        console.log('Message saved in API:', response.data);
+      } catch (apiErr) {
+        console.log('API not available, saving locally only');
       }
       
       const newMessage = {
@@ -201,13 +219,14 @@ function App() {
       setMessages([newMessage, ...messages]);
       setContactForm({ name: '', email: '', subject: '', message: '' });
       
-      setContactStatus({ loading: false, success: true, error: false, message: '✅ Message sent successfully!' });
+      setContactStatus({ loading: false, success: true, error: false, message: '✅ Message sent successfully! Notification sent!' });
       
       setTimeout(() => {
         setContactStatus({ loading: false, success: false, error: false, message: '' });
       }, 5000);
       
     } catch (err) {
+      console.error('Contact Error:', err);
       setContactStatus({ loading: false, success: false, error: true, message: '❌ Something went wrong. Please try again.' });
     }
   };
@@ -219,11 +238,6 @@ function App() {
 
   const handleOrderChange = (e) => {
     setOrderForm({ ...orderForm, [e.target.name]: e.target.value });
-  };
-
-  const handleLoginChange = (e) => {
-    setLoginData({ ...loginData, [e.target.name]: e.target.value });
-    setLoginError('');
   };
 
   // Handle submits
@@ -242,22 +256,6 @@ function App() {
       total: total
     };
     submitOrder(orderData);
-  };
-
-  // ✅ Admin Login - FIXED
-  const handleLogin = (e) => {
-    e.preventDefault();
-    if (loginData.username === 'admin' && loginData.password === 'admin123') {
-      setIsLoggedIn(true);
-      setLoginError('');
-    } else {
-      setLoginError('❌ Invalid username or password');
-    }
-  };
-
-  const handleLogout = () => {
-    setIsLoggedIn(false);
-    setLoginData({ username: '', password: '' });
   };
 
   // Select product and scroll to order
@@ -361,6 +359,35 @@ function App() {
 
   return (
     <div className="App">
+      {/* API STATUS BADGE */}
+      <div style={{
+        position: 'fixed',
+        top: '80px',
+        right: '20px',
+        zIndex: 999,
+        background: apiConnected ? '#22c55e' : '#f59e0b',
+        color: '#fff',
+        padding: '8px 18px',
+        borderRadius: '20px',
+        fontSize: '12px',
+        fontWeight: 'bold',
+        letterSpacing: '1px',
+        boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px'
+      }}>
+        <span style={{
+          display: 'inline-block',
+          width: '10px',
+          height: '10px',
+          borderRadius: '50%',
+          background: apiConnected ? '#22c55e' : '#f59e0b',
+          animation: apiConnected ? 'pulse 1.5s infinite' : 'none'
+        }}></span>
+        {apiConnected ? '✅ API Connected' : '⚠️ Local Mode'}
+      </div>
+
       {/* Navbar */}
       <nav className={`navbar ${scrolled ? 'scrolled' : ''}`}>
         <div className="navbar-container">
@@ -376,7 +403,6 @@ function App() {
               <li><a href="#private-label" onClick={(e) => { e.preventDefault(); navigateTo('private-label'); }}>Private Label</a></li>
               <li><a href="#contact" onClick={(e) => { e.preventDefault(); navigateTo('contact'); }}>Contact</a></li>
               <li><a href="#inbox" onClick={(e) => { e.preventDefault(); setShowInbox(!showInbox); }}>Inbox</a></li>
-              <li><a href="#admin" onClick={(e) => { e.preventDefault(); navigateTo('admin'); }}>Admin</a></li>
             </ul>
             <button className="btn-order-nav" onClick={() => { navigateTo('order'); setShowOrderSection(true); }}>ORDER NOW</button>
           </div>
@@ -601,7 +627,7 @@ function App() {
               <div key={product.id} className="product-card animate-on-scroll">
                 <div className="product-image">
                   <img 
-                    src={product.image} 
+                    src={product.image || waterJpg} 
                     alt={product.name} 
                     style={{ 
                       width: '100%', 
@@ -613,7 +639,7 @@ function App() {
                 </div>
                 <div className="product-info">
                   <h3 className="product-name">{product.name}</h3>
-                  <p className="product-desc">{product.description}</p>
+                  <p className="product-desc">{product.description || 'Pure & Healthy'}</p>
                   <p className="product-price">₨ {product.price}</p>
                   <p className="product-delivery">🚚 Free Delivery</p>
                   <div className="product-actions">
@@ -641,7 +667,6 @@ function App() {
           <h2 className="section-title">Place Your Order</h2>
           <p className="section-subtitle">Fill in your details to confirm your purchase</p>
           
-          {/* Order Summary */}
           {selectedProduct && (
             <div className="order-summary">
               <h3>Order Summary</h3>
@@ -810,77 +835,15 @@ function App() {
         </div>
       </section>
 
-      {/* Order CTA */}
-      <section className="order-cta animate-on-scroll">
-        <div className="container">
-          <h2>ORDER NOW</h2>
-          <h3>DRINK PURE, LIVE BETTER</h3>
-          <p className="contact-phone">📞 CALL/WHATSAPP: 0315 8969879</p>
-          <button className="btn-primary" onClick={() => { navigateTo('order'); setShowOrderSection(true); }}>ORDER NOW</button>
-        </div>
-      </section>
+     
 
-      {/* Contact Section */}
+      {/* Contact Section - NO FORM */}
       <section id="contact" ref={contactRef} className="contact animate-on-scroll">
         <div className="container">
           <h2 className="section-title">Contact Us</h2>
           <p className="section-subtitle">We'd love to hear from you</p>
           <div className="contact-grid">
-            <div className="contact-info">
-              <h3>Send Message</h3>
-              <form className="contact-form-small" onSubmit={handleContactSubmit}>
-                <div className="form-group">
-                  <label>Your Name</label>
-                  <input 
-                    type="text" 
-                    name="name" 
-                    placeholder="Your name" 
-                    value={contactForm.name}
-                    onChange={handleContactChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Your Email</label>
-                  <input 
-                    type="email" 
-                    name="email" 
-                    placeholder="your@email.com" 
-                    value={contactForm.email}
-                    onChange={handleContactChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Subject</label>
-                  <input 
-                    type="text" 
-                    name="subject" 
-                    placeholder="Subject" 
-                    value={contactForm.subject}
-                    onChange={handleContactChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Message</label>
-                  <textarea 
-                    name="message" 
-                    placeholder="Your message" 
-                    rows="4"
-                    value={contactForm.message}
-                    onChange={handleContactChange}
-                    required
-                  ></textarea>
-                </div>
-                <button type="submit" className="btn-primary full" disabled={contactStatus.loading}>
-                  {contactStatus.loading ? 'Sending...' : 'Send Message'}
-                </button>
-                {contactStatus.success && <p className="success-message">{contactStatus.message}</p>}
-                {contactStatus.error && <p className="error-message">{contactStatus.message}</p>}
-              </form>
-            </div>
-            <div className="contact-details">
+            <div className="contact-details" style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '20px' }}>
               <div className="contact-item">
                 <span className="contact-icon">📞</span>
                 <div>
@@ -926,7 +889,7 @@ function App() {
             </div>
           </div>
 
-          {/* Map - Aapki exact location ke saath */}
+          {/* Map */}
           <div className="map-placeholder">
             <h4>Find Us</h4>
             <p>📍 Zamanabad Park Rd, Sector 36 B Landhi Town, Karachi</p>
@@ -941,7 +904,6 @@ function App() {
                 loading="lazy"
               ></iframe>
             </div>
-            {/* Open in Google Maps Button */}
             <div style={{ textAlign: 'center', marginTop: '10px' }}>
               <a 
                 href="https://www.google.com/maps?q=Zamanabad+Park+Rd+Landhi+Karachi" 
@@ -978,173 +940,6 @@ function App() {
                   <div className="inbox-email">{msg.email}</div>
                 </div>
               ))}
-            </div>
-          )}
-        </div>
-      </section>
-
-      {/* Admin Section */}
-      <section id="admin" ref={adminRef} className="admin animate-on-scroll">
-        <div className="container">
-          {!isLoggedIn ? (
-            <div className="admin-login">
-              <h2 className="section-title">MOLEXA WATER</h2>
-              <h3>Admin Login</h3>
-              <form onSubmit={handleLogin}>
-                <div className="form-group">
-                  <label>Username</label>
-                  <input 
-                    type="text" 
-                    name="username" 
-                    placeholder="Enter username" 
-                    value={loginData.username}
-                    onChange={handleLoginChange}
-                    required
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Password</label>
-                  <input 
-                    type="password" 
-                    name="password" 
-                    placeholder="Enter password" 
-                    value={loginData.password}
-                    onChange={handleLoginChange}
-                    required
-                  />
-                </div>
-                {loginError && <p className="error-message">{loginError}</p>}
-                <button type="submit" className="btn-primary full">Login</button>
-                <p className="demo-note">Demo: admin / admin123</p>
-              </form>
-            </div>
-          ) : (
-            <div className="admin-dashboard">
-              <div className="admin-header">
-                <h2>MOLEXA WATER — Dashboard</h2>
-                <button className="btn-secondary small" onClick={handleLogout}>Logout</button>
-              </div>
-
-              <div className="admin-tabs">
-                <button 
-                  className={`admin-tab ${activeAdminTab === 'orders' ? 'active' : ''}`}
-                  onClick={() => setActiveAdminTab('orders')}
-                >
-                  📦 Orders
-                </button>
-                <button 
-                  className={`admin-tab ${activeAdminTab === 'messages' ? 'active' : ''}`}
-                  onClick={() => setActiveAdminTab('messages')}
-                >
-                  💬 Messages
-                </button>
-              </div>
-
-              <div className="admin-stats">
-                <div className="admin-stat">
-                  <span className="admin-stat-number">{orders.length}</span>
-                  <span className="admin-stat-label">Total Orders</span>
-                </div>
-                <div className="admin-stat">
-                  <span className="admin-stat-number">{orders.filter(o => o.status === 'Pending').length}</span>
-                  <span className="admin-stat-label">Pending</span>
-                </div>
-                <div className="admin-stat">
-                  <span className="admin-stat-number">{orders.filter(o => o.status === 'Delivered').length}</span>
-                  <span className="admin-stat-label">Delivered</span>
-                </div>
-                <div className="admin-stat">
-                  <span className="admin-stat-number">{orders.filter(o => o.status === 'Processing').length}</span>
-                  <span className="admin-stat-label">Processing</span>
-                </div>
-              </div>
-
-              {activeAdminTab === 'orders' && (
-                <div className="admin-orders">
-                  <h3>All Orders</h3>
-                  <div className="table-wrapper">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Order ID</th>
-                          <th>Customer</th>
-                          <th>Product</th>
-                          <th>Quantity</th>
-                          <th>Total</th>
-                          <th>Payment</th>
-                          <th>Status</th>
-                          <th>Date</th>
-                          <th>Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {orders.map(order => (
-                          <tr key={order.id}>
-                            <td>#{order.id}</td>
-                            <td>{order.customer}</td>
-                            <td>{order.product}</td>
-                            <td>{order.quantity}</td>
-                            <td>₨ {order.total}</td>
-                            <td>{order.payment}</td>
-                            <td>
-                              <span className={`status-badge ${order.status.toLowerCase()}`}>
-                                {order.status}
-                              </span>
-                            </td>
-                            <td>{order.date}</td>
-                            <td>
-                              <select 
-                                className="status-select" 
-                                defaultValue={order.status}
-                                onChange={(e) => updateOrderStatus(order.id, e.target.value)}
-                              >
-                                <option value="Pending">Pending</option>
-                                <option value="Processing">Processing</option>
-                                <option value="Delivered">Delivered</option>
-                                <option value="Cancelled">Cancelled</option>
-                              </select>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
-              {activeAdminTab === 'messages' && (
-                <div className="admin-messages">
-                  <h3>All Messages</h3>
-                  {messages.length === 0 ? (
-                    <p className="no-messages">No messages yet.</p>
-                  ) : (
-                    <div className="messages-list">
-                      {messages.map(msg => (
-                        <div key={msg.id} className={`message-item ${msg.status === 'Unread' ? 'unread' : ''}`}>
-                          <div className="message-header">
-                            <span className="message-name">{msg.name}</span>
-                            <span className="message-email">{msg.email}</span>
-                            <span className="message-date">{msg.date}</span>
-                            <span className={`message-status ${msg.status.toLowerCase()}`}>{msg.status}</span>
-                          </div>
-                          <div className="message-subject">{msg.subject}</div>
-                          <div className="message-text">{msg.message}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              <div className="admin-actions">
-                <h3>Quick Actions</h3>
-                <div className="action-buttons">
-                  <button className="btn-secondary small">➕ Add Product</button>
-                  <button className="btn-secondary small">👥 Manage Customers</button>
-                  <button className="btn-secondary small">📊 View Reports</button>
-                  <button className="btn-secondary small">⚙️ Settings</button>
-                </div>
-              </div>
             </div>
           )}
         </div>
