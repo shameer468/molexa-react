@@ -19,7 +19,7 @@ import whatsappImg from './assets/WhatsApp Image 2026-04-26 at 7.57.36 PM.jpeg';
 import bottle500ml from './assets/WhatsApp Image 2026-04-26 at 7.57.36 PM.jpeg';
 import bottle15l from './assets/WhatsApp Image 2026-04-26 at 7.57.36 PM.jpeg';
 
-// Local product data (fallback) with images
+// Local product data (fallback) with image
 const localProducts = [
   {
     id: 1,
